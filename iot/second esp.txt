@@ -1,0 +1,86 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <WiFiClientSecure.h>
+#include "DHT.h"
+
+#define DHTPIN 15
+#define DHTTYPE DHT22
+
+DHT dht(DHTPIN, DHTTYPE);
+
+const char* ssid = "Banuka";
+const char* password = "123456780";
+
+const char* mqtt_server = "6961f6908a664647a9c96d98193c9920.s1.eu.hivemq.cloud";
+const int mqtt_port = 8883;
+const char* mqtt_user = "Tharindu";
+const char* mqtt_pass = "ESP123456789esp";
+
+WiFiClientSecure secureClient;
+PubSubClient client(secureClient);
+
+void setup_wifi() {
+  Serial.print("Connecting to WiFi");
+  WiFi.begin(ssid, password);
+  int retryCount = 0;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    retryCount++;
+    if (retryCount > 40) { // 20 seconds timeout
+      Serial.println("\nFailed to connect to WiFi");
+      return;
+    }
+  }
+  Serial.println("\nWiFi connected");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    if (client.connect("ESP32_2", mqtt_user, mqtt_pass)) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.println(client.state());
+      delay(2000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+  setup_wifi();
+
+  secureClient.setInsecure();
+  client.setServer(mqtt_server, mqtt_port);
+
+  Serial.println("Setup complete");
+}
+
+void loop() {
+  if (!client.connected()) reconnect();
+  client.loop();
+
+  float hum = dht.readHumidity();
+
+  if (isnan(hum)) {
+    Serial.println("Failed to read humidity");
+  } else {
+    Serial.print("Humidity: ");
+    Serial.print(hum);
+    Serial.println("%");
+
+    String payload = "{\"humidity\":" + String(hum, 1) + "}";
+    Serial.print("Publishing payload: ");
+    Serial.println(payload);
+
+    if (!client.publish("esp32/sensorData", payload.c_str())) {
+      Serial.println("Publish failed");
+    }
+  }
+  delay(5000);
+}
